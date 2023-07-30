@@ -14,6 +14,8 @@ from transformers.optimization import AdamW, get_cosine_schedule_with_warmup
 from torch import Tensor
 from torch.optim.optimizer import Optimizer
 
+checkinfo = "facebook/bart-base"
+checkinfo = "gogamza/kobart-base-v2"
 parser = argparse.ArgumentParser(description='BART translation')
 
 parser.add_argument('--checkpoint_path',
@@ -63,7 +65,7 @@ class BartSummaryModule(pl.LightningDataModule):
         self.train_file_path = train_file
         self.test_file_path = test_file
         if tok is None:
-            self.tok =  BartTokenizerFast.from_pretrained("facebook/bart-base")
+            self.tok =  BartTokenizerFast.from_pretrained(checkinfo)
         else:
             self.tok = tok
         self.num_workers = num_workers
@@ -173,14 +175,14 @@ class Base(pl.LightningModule):
 
     def backward(self, loss: Tensor, optimizer: Optimizer, optimizer_idx: int, *args, **kwargs) -> None:
         loss.requires_grad_(True)
-        
+
         if self.trainer.train_loop.automatic_optimization or self._running_manual_backward:
             loss.backward(*args, **kwargs)
 
 class BARTConditionalGeneration(Base):
     def __init__(self, hparams, **kwargs):
         super(BARTConditionalGeneration, self).__init__(hparams, **kwargs)
-        self.model = BartForConditionalGeneration.from_pretrained("facebook/bart-base")
+        self.model = BartForConditionalGeneration.from_pretrained(checkinfo)
         for param in self.model.parameters():
             param.requires_grad = True
         
@@ -188,7 +190,7 @@ class BARTConditionalGeneration(Base):
         self.bos_token = '<s>'
         self.eos_token = '</s>'
         self.pad_token_id = 0
-        self.tokenizer = BartTokenizerFast.from_pretrained("facebook/bart-base")
+        self.tokenizer = BartTokenizerFast.from_pretrained(checkinfo)
 
     def forward(self, inputs):
         attention_mask = inputs['input_ids'].ne(self.pad_token_id).float()
