@@ -3,19 +3,18 @@ import logging
 import os
 import numpy as np
 import pandas as pd
-import pytorch_lightning as pl
 import torch
 from pytorch_lightning import loggers as pl_loggers
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from dataset import BARTDataset
-from transformers import AutoTokenizer, BartModel
-from transformers import BartForConditionalGeneration, BartTokenizerFast
+from transformers import AutoTokenizer, BartForSequenceClassification
 from transformers.optimization import AdamW, get_cosine_schedule_with_warmup
 from torch import Tensor
 from torch.optim.optimizer import Optimizer
 
-checkinfo = "facebook/bart-base"
-checkinfo = "gogamza/kobart-base-v2"
+from lightning import LightningModule, LightningDataModule
+
+modelInfo = "gogamza/kobart-base-v2" #"facebook/bart-base"
 parser = argparse.ArgumentParser(description='BART translation')
 
 parser.add_argument('--checkpoint_path',
@@ -43,7 +42,7 @@ class ArgsBase():
 
         parser.add_argument('--batch_size',
                             type=int,
-                            default=28,
+                            default=14,
                             help='')
 
         parser.add_argument('--max_len',
@@ -52,20 +51,20 @@ class ArgsBase():
                             help='max seq len')
         return parser
 
-
-class BartSummaryModule(pl.LightningDataModule):
-    def __init__(self, train_file,
-                 test_file, tok,
+class BartTranslationModule(LightningDataModule): 
+    def __init__(self, train_file: str="data/train.tsv",
+                 test_file: str="data/test/tsv",
+                 tok=None,
                  max_len=512,
-                 batch_size=8,
-                 num_workers=5):
+                 batch_size=4,
+                 num_workers=1):
         super().__init__()
         self.batch_size = batch_size
         self.max_len = max_len
         self.train_file_path = train_file
         self.test_file_path = test_file
         if tok is None:
-            self.tok =  BartTokenizerFast.from_pretrained(checkinfo)
+            self.tok = AutoTokenizer.from_pretrained(modelInfo)
         else:
             self.tok = tok
         self.num_workers = num_workers
@@ -79,9 +78,16 @@ class BartSummaryModule(pl.LightningDataModule):
                             default=5,
                             help='num of worker for dataloader')
         return parser
-
-    # OPTIONAL, called for every GPU/machine (assigning state is OK)
-    def setup(self, stage):
+    
+    def setup(self, stage: str):
+        # split dataset
+        self.train = BARTDataset(self.train_file_path,
+                                            self.tok,
+                                            self.max_len)
+        self.test = BARTDataset(self.test_file_path,
+                                            self.tok,
+                                            self.max_len)
+    def setup(self, stage: str):
         # split dataset
         self.train = BARTDataset(self.train_file_path,
                                             self.tok,
@@ -97,19 +103,16 @@ class BartSummaryModule(pl.LightningDataModule):
         return train
 
     def val_dataloader(self):
-        val = DataLoader(self.test,
+        return DataLoader(self.test,
                          batch_size=self.batch_size,
                          num_workers=self.num_workers, shuffle=False)
-        return val
 
     def test_dataloader(self):
-        test = DataLoader(self.test,
+        return DataLoader(self.test,
                           batch_size=self.batch_size,
                           num_workers=self.num_workers, shuffle=False)
-        return test
 
-
-class Base(pl.LightningModule):
+class Base(LightningModule):
     def __init__(self, hparams, **kwargs) -> None:
         super(Base, self).__init__()
         self.hparams = hparams
@@ -124,7 +127,7 @@ class Base(pl.LightningModule):
         parser.add_argument('--batch-size',
                             type=int,
                             default=14,
-                            help='batch size for training (default: 96)')
+                            help='batch size for training (default: 14)')
 
         parser.add_argument('--lr',
                             type=float,
@@ -135,11 +138,6 @@ class Base(pl.LightningModule):
                             type=float,
                             default=0.1,
                             help='warmup ratio')
-
-        parser.add_argument('--model_path',
-                            type=str,
-                            default=None,
-                            help='kobart model path')
         return parser
 
     def configure_optimizers(self):
@@ -173,24 +171,15 @@ class Base(pl.LightningModule):
                         'frequency': 1}
         return [optimizer], [lr_scheduler]
 
-    def backward(self, loss: Tensor, optimizer: Optimizer, optimizer_idx: int, *args, **kwargs) -> None:
-        loss.requires_grad_(True)
-
-        if self.trainer.train_loop.automatic_optimization or self._running_manual_backward:
-            loss.backward(*args, **kwargs)
-
-class BARTConditionalGeneration(Base):
+class KoBARTConditionalGeneration(Base):
     def __init__(self, hparams, **kwargs):
-        super(BARTConditionalGeneration, self).__init__(hparams, **kwargs)
-        self.model = BartForConditionalGeneration.from_pretrained(checkinfo)
-        for param in self.model.parameters():
-            param.requires_grad = True
-        
+        super(KoBARTConditionalGeneration, self).__init__(hparams, **kwargs)
+        self.model = BartForSequenceClassification.from_pretrained(modelInfo)
         self.model.train()
         self.bos_token = '<s>'
         self.eos_token = '</s>'
         self.pad_token_id = 0
-        self.tokenizer = BartTokenizerFast.from_pretrained(checkinfo)
+        self.tokenizer = AutoTokenizer.from_pretrained(modelInfo)
 
     def forward(self, inputs):
         attention_mask = inputs['input_ids'].ne(self.pad_token_id).float()
@@ -224,7 +213,7 @@ class BARTConditionalGeneration(Base):
 if __name__ == '__main__':
     parser = Base.add_model_specific_args(parser)
     parser = ArgsBase.add_model_specific_args(parser)
-    parser = BartSummaryModule.add_model_specific_args(parser)
+    parser = BartTranslationModule.add_model_specific_args(parser)
     parser = pl.Trainer.add_argparse_args(parser)
     args = parser.parse_args()
     logging.info(args)

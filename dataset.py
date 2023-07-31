@@ -1,9 +1,8 @@
-import torch
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
 
-class BARTDataset(Dataset):
+class BARTCustomDataset(Dataset):
     def __init__(self, file, tok, max_len, pad_index = 0, ignore_index=-100):
         super().__init__()
         self.tok = tok
@@ -33,10 +32,10 @@ class BARTDataset(Dataset):
     
     def __getitem__(self, idx):
         instance = self.docs.iloc[idx]
-        input_ids = self.tok.encode(instance['en'])
+        input_ids = self.tok.encode(instance['kr'])
         input_ids = self.add_padding_data(input_ids)
 
-        label_ids = self.tok.encode(instance['kr'])
+        label_ids = self.tok.encode(instance['en'])
         label_ids.append(self.tok.eos_token_id)
         dec_input_ids = [self.pad_index]
         dec_input_ids += label_ids[:-1]
@@ -46,9 +45,9 @@ class BARTDataset(Dataset):
 #         return (torch.tensor(input_ids),
 #                 torch.tensor(dec_input_ids),
 #                 torch.tensor(label_ids))
-        return {'input_ids': np.array(input_ids, dtype=np.longlong),
-                'decoder_input_ids': np.array(dec_input_ids, dtype=np.longlong),
-                'labels': np.array(label_ids, dtype=np.longlong)}
+        return {'input_ids': np.array(input_ids, dtype=np.int_),
+                'decoder_input_ids': np.array(dec_input_ids, dtype=np.int_),
+                'labels': np.array(label_ids, dtype=np.int_)}
     
     def __len__(self):
         return self.len
