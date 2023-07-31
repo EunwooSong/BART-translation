@@ -1,6 +1,6 @@
-torch==2.0.0
-torchvision==2.0.0
-torchaudio==2.0.0
+#torch==2.0.0+cu118
+#torchvision==2.0.0+cu118
+#torchaudio==2.0.0+cu118
 lightning==2.0.6
 transformers==4.31.0
 pandas==2.0.3

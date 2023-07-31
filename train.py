@@ -6,15 +6,14 @@ import pandas as pd
 import torch
 from pytorch_lightning import loggers as pl_loggers
 from torch.utils.data import DataLoader
-from dataset import BARTDataset
-from transformers import AutoTokenizer, BartForSequenceClassification
+from dataset import BARTCustomDataset
+from transformers import AutoTokenizer, BartForSequenceClassification, BartForConditionalGeneration, PreTrainedTokenizerFast, BartModel, AutoModelForSequenceClassification
 from transformers.optimization import AdamW, get_cosine_schedule_with_warmup
 from torch import Tensor
 from torch.optim.optimizer import Optimizer
+import pytorch_lightning as pl 
 
-from lightning import LightningModule, LightningDataModule
-
-modelInfo = "gogamza/kobart-base-v2" #"facebook/bart-base"
+modelInfo = "gogamza/kobart-base-v2" #"gogamza/kobart-base-v2" #"facebook/bart-base"
 parser = argparse.ArgumentParser(description='BART translation')
 
 parser.add_argument('--checkpoint_path',
@@ -42,7 +41,7 @@ class ArgsBase():
 
         parser.add_argument('--batch_size',
                             type=int,
-                            default=14,
+                            default=4,
                             help='')
 
         parser.add_argument('--max_len',
@@ -51,7 +50,7 @@ class ArgsBase():
                             help='max seq len')
         return parser
 
-class BartTranslationModule(LightningDataModule): 
+class CustomDataset(pl.LightningDataModule): 
     def __init__(self, train_file: str="data/train.tsv",
                  test_file: str="data/test/tsv",
                  tok=None,
@@ -64,7 +63,7 @@ class BartTranslationModule(LightningDataModule):
         self.train_file_path = train_file
         self.test_file_path = test_file
         if tok is None:
-            self.tok = AutoTokenizer.from_pretrained(modelInfo)
+            self.tok = PreTrainedTokenizerFast.from_pretrained(modelInfo)
         else:
             self.tok = tok
         self.num_workers = num_workers
@@ -81,18 +80,18 @@ class BartTranslationModule(LightningDataModule):
     
     def setup(self, stage: str):
         # split dataset
-        self.train = BARTDataset(self.train_file_path,
+        self.train = BARTCustomDataset(self.train_file_path,
                                             self.tok,
                                             self.max_len)
-        self.test = BARTDataset(self.test_file_path,
+        self.test = BARTCustomDataset(self.test_file_path,
                                             self.tok,
                                             self.max_len)
     def setup(self, stage: str):
         # split dataset
-        self.train = BARTDataset(self.train_file_path,
+        self.train = BARTCustomDataset(self.train_file_path,
                                             self.tok,
                                             self.max_len)
-        self.test = BARTDataset(self.test_file_path,
+        self.test = BARTCustomDataset(self.test_file_path,
                                             self.tok,
                                             self.max_len)
 
@@ -112,7 +111,7 @@ class BartTranslationModule(LightningDataModule):
                           batch_size=self.batch_size,
                           num_workers=self.num_workers, shuffle=False)
 
-class Base(LightningModule):
+class Base(pl.LightningModule):
     def __init__(self, hparams, **kwargs) -> None:
         super(Base, self).__init__()
         self.hparams = hparams
@@ -171,15 +170,14 @@ class Base(LightningModule):
                         'frequency': 1}
         return [optimizer], [lr_scheduler]
 
-class KoBARTConditionalGeneration(Base):
+class BARTConditionalGeneration(Base):
     def __init__(self, hparams, **kwargs):
-        super(KoBARTConditionalGeneration, self).__init__(hparams, **kwargs)
-        self.model = BartForSequenceClassification.from_pretrained(modelInfo)
-        self.model.train()
+        super(BARTConditionalGeneration, self).__init__(hparams, **kwargs)
+        self.model = AutoModelForSequenceClassification.from_pretrained(modelInfo)
         self.bos_token = '<s>'
         self.eos_token = '</s>'
         self.pad_token_id = 0
-        self.tokenizer = AutoTokenizer.from_pretrained(modelInfo)
+        self.tokenizer = PreTrainedTokenizerFast.from_pretrained(modelInfo)
 
     def forward(self, inputs):
         attention_mask = inputs['input_ids'].ne(self.pad_token_id).float()
@@ -213,14 +211,14 @@ class KoBARTConditionalGeneration(Base):
 if __name__ == '__main__':
     parser = Base.add_model_specific_args(parser)
     parser = ArgsBase.add_model_specific_args(parser)
-    parser = BartTranslationModule.add_model_specific_args(parser)
+    parser = CustomDataset.add_model_specific_args(parser)
     parser = pl.Trainer.add_argparse_args(parser)
     args = parser.parse_args()
     logging.info(args)
 
     model = BARTConditionalGeneration(args)
 
-    dm = BartSummaryModule(args.train_file,
+    dm = CustomDataset(args.train_file,
                             args.test_file,
                             None,
                             max_len=args.max_len,
