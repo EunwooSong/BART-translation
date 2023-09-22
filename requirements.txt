@@ -1,7 +1,4 @@
-#torch==2.0.0+cu118
-#torchvision==2.0.0+cu118
-#torchaudio==2.0.0+cu118
-lightning==2.0.6
-transformers==4.31.0
-pandas==2.0.3
-tokenizers==0.13.3
+pandas
+torch==2.0.1+cu118
+transformers
+pytorch-lightning
